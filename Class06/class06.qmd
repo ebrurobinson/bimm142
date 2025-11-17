@@ -1,0 +1,130 @@
+---
+title: "Class6"
+author: "Ebru Robinson"
+format: pdf
+toc: true
+---
+
+All functions in R have at least 3 things:
+- A **name**, we pick this and use it to call our function,
+-Input **arguments** (there can be multiple)
+-The **body** lines of R code that do the work
+
+##Our first (silly) function
+Write a function to add some numbers
+```{r}
+add <- function(x,y=1) {
+  x+y
+}
+```
+
+Now we can call this function:
+
+
+```{r}
+add(c(10,10),100)
+```
+
+## A second function
+
+Write a function to generate random nucleotide sequences of a user specified length:
+
+
+The `sample()` function can be helpful here.
+
+```{r}
+sample(c("A","C","G","T"), size=50, replace=TRUE)
+```
+I want the a 1 elemnt long character vectro that looks this "ACCACT" not "A" "C" "C" "A" "C" "T"
+```{r}
+v<-sample(c("A","C","G","T"), size=50, replace=TRUE)
+paste(v,collapse="")
+```
+
+Turn this into my first function
+
+```{r}
+generate_dna <- function(size=50) {
+  v<-sample(c("A","C","G","T"), size=size, replace=TRUE)
+paste(v,collapse="")
+}
+```
+
+Test it:
+```{r}
+generate_dna(60)
+```
+```{r}
+fasta <- FALSE
+if(fasta) {
+  cat("HELLO You")
+}
+```
+
+Add the ability to return a multi-element vector or a single element fasta like vector.
+
+```{r}
+generate_fasta <- function(size=50, fasta=TRUE) {
+  v<-sample(c("A","C","G","T"), size=size, replace=TRUE)
+  s<- paste(v,collapse="")
+if(fasta){
+  return(s)
+}else{
+  return(v)
+}
+}
+```
+
+
+```{r}
+generate_fasta(10, fasta=FALSE)
+```
+## A protein genearting function
+```{r}
+generate_protein <- function(size = 50, fasta = TRUE) {
+  amino_acids <- c("A", "R", "N", "D", "C", "Q", "E", "G", 
+                   "H", "I", "L", "K", "M", "F", "P", "S", 
+                   "T", "W", "Y", "V")
+  
+  v <- sample(amino_acids, size = size, replace = TRUE)
+  s <- paste(v, collapse = "")
+  
+  if (fasta) {
+    return(s)
+  } else {
+    return(v)
+  }
+}
+```
+```{r}
+generate_protein(6)
+```
+Use our new `generate_prtein()` function to make random protein sequences of length 6 to 12 (i.e. one length 7, etc. up to length 12)
+one way to do is "brute force"
+
+```{r}
+generate_protein(6)
+generate_protein(7)
+generate_protein(8)
+generate_protein(9)
+```
+A second way is to use `for()` loop:
+
+```{r}
+lengths <- 6:12
+lengths
+```
+```{r}
+for(i in lengths) {
+ cat(">",i,"\n",sep="")
+  aa <- generate_protein(i)
+  cat(aa)
+  cat("\n")
+}
+
+```
+A third, and better, way to solve this is to use `apply()` family of functions, specifically the `sapply()` finction in this case.
+```{r}
+sapply(6:12,generate_protein)
+```
+

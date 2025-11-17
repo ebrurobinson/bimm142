@@ -1,0 +1,326 @@
+---
+title: "Class12"
+author: "Ebru Robinson"
+format: pdf
+toc: TRUE
+---
+
+## Background
+
+Today we will analyze some RNASeq data from Himes et al. on the effects of a common steroids (dexmethasone also called "dex") on airway smooth muscle cells (ASMs).
+
+For this analysis we need two main inputs
+
+- `countData`:a table of **counts** per gene(in rows) accross experiments (in columns).
+*
+-`colData`: **metadata**about the design of the experiments. The rows match the columns in `coundtada`
+
+## Data Import
+```{r}
+counts <- read.csv("airway_scaledcounts.csv", row.names = 1)
+metadata <- read.csv("airway_metadata.csv")
+```
+
+Let's have a peek at our `counts` data.
+```{r}
+head(counts)
+```
+
+and the `metadata`
+
+```{r}
+head(metadata)
+```
+ 
+ >Q1. How many genes are in this dataset? 
+ 
+ 
+```{r}
+nrow(counts)
+```
+ 
+>Q2. How many experiments (i.e. columns in `counts` or rows in `metadata`) do we have? 
+
+```{r}
+ncol(counts)
+```
+
+>Q3. How many ‘control’ experiments do we have? 
+
+```{r}
+sum(metadata$dex== "control")
+```
+
+1. Extract the "control" columns from `counts`
+2. Find the mean value for each gene in these "control" columns
+3-4. Do the same for the "treated" columns
+5. Compare these values for each gene
+
+
+
+```{r}
+control.inds <-metadata$dex=="control"
+control.counts <-counts[,control.inds]
+
+```
+
+Step2. 
+
+```{r}
+control.mean <-rowMeans(control.counts)
+```
+
+Step3-4
+
+```{r}
+treated.inds <- metadata$dex== "treated"
+treated.counts <- counts[,treated.inds]
+```
+
+```{r}
+treated.mean <- rowMeans(treated.counts)
+```
+
+
+For ease of book-keeping we can store these together in one data frame called `meancounts`
+```{r}
+meancounts <- data.frame(control.mean,treated.mean)
+head(meancounts)
+```
+
+
+```{r}
+plot(meancounts)
+```
+
+This is screaming at me to log transform this data!!
+
+
+```{r}
+
+plot(meancounts, log="xy")
+```
+
+We use log2 "fold-change" as a way to compare
+
+```{r}
+#treated/control
+log2(10/10) #no change
+log2(20/10) 
+
+```
+```{r}
+meancounts$log2fc <- log2(meancounts$treated.mean/meancounts$control.mean)
+head(meancounts)
+```
+2 folds means 4 times higher gene number
+A common "rule-of-thumb" threshold for calling something "up" regulated is a log2-fold-change of +2 or greater. For "down" regulated is -2 or less.
+
+
+
+```{r}
+
+
+zero.inds <- which(meancounts[,1:2]==0, arr.ind=T) 
+
+to.rm <- unique(zero.inds[,1])
+mycounts <- meancounts[-to.rm,]
+head(mycounts)
+
+
+
+# ALTERNATE METHOD FIND ZERO VALUES
+
+
+```
+
+>Q How many genes are "up" regulated at the +2 log2FC threshold?
+
+
+```{r}
+up.ind   <- mycounts$log2fc > 2
+down.ind <- mycounts$log2fc < -2
+```
+
+```{r}
+sum(up.ind)
+
+```
+>Q How many genes are "down" regulated at the +2 log2FC threshold?
+```{r}
+sum(down.ind)
+```
+
+## PCA 
+```{r}
+library(DESeq2)
+
+# 1) Read data
+counts   <- read.csv("airway_scaledcounts.csv", row.names = 1, check.names = FALSE)
+metadata <- read.csv("airway_metadata.csv", stringsAsFactors = FALSE)
+
+# 2) Clean whitespace/case everywhere
+colnames(counts) <- trimws(colnames(counts))
+names(metadata)  <- trimws(names(metadata))
+metadata[] <- lapply(metadata, function(x) if (is.character(x)) trimws(x) else x)
+
+# 3) Set sample IDs as rownames for metadata (adjust 'run' if your id column is named differently)
+id_col <- if ("run" %in% names(metadata)) "run" else names(metadata)[1]
+rownames(metadata) <- metadata[[id_col]]
+
+# 4) Align samples (keep shared samples, consistent order)
+common <- intersect(colnames(counts), rownames(metadata))
+counts   <- counts[, common, drop = FALSE]
+metadata <- metadata[common, ,  drop = FALSE]
+
+# 5) Normalize the 'dex' column values and inspect
+metadata$dex <- tolower(trimws(metadata$dex))
+table(metadata$dex, useNA = "ifany")  # should show only 'control' and 'treated' and no <NA>
+
+# If you still see NA, show the offending rows:
+which(is.na(metadata$dex))            # indices with NA
+metadata[is.na(metadata$dex), , drop = FALSE]
+
+# 6) Drop samples with missing dex OR fix the values
+keep <- !is.na(metadata$dex) & metadata$dex %in% c("control","treated")
+counts   <- counts[, keep, drop = FALSE]
+metadata <- metadata[keep, ,  drop = FALSE]
+
+# 7) Make factor with correct levels (control as reference)
+metadata$dex <- factor(metadata$dex, levels = c("control","treated"))
+
+# 8) Build DESeq2 object (ensure integer counts)
+counts_mat <- as.matrix(round(counts))
+dds <- DESeqDataSetFromMatrix(countData = counts_mat,
+                              colData   = metadata,
+                              design    = ~ dex)
+
+# Optional: filter zero-count genes
+dds <- dds[rowSums(counts(dds)) > 0, ]
+
+# 9) PCA prep and plot
+vsd <- vst(dds, blind = FALSE)
+plotPCA(vsd, intgroup = "dex")
+
+```
+
+
+```{r}
+pcaData <- plotPCA(vsd, intgroup=c("dex"), returnData=TRUE)
+head(pcaData)
+```
+```{r}
+# Calculate percent variance per PC for the plot axis labels
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+```
+
+```{r}
+library(ggplot2)
+ggplot(pcaData) +
+  aes(x = PC1, y = PC2, color = dex) +
+  geom_point(size =3) +
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  coord_fixed() +
+  theme_bw()
+```
+
+
+## DESeq analysis
+
+Let's do this with DESeq2 and put some stats behind these numbers
+
+```{r, message =FALSE}
+library(DESeq2)
+```
+
+
+DESeq wants 3 things for analysis,countData, colData and desing.
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData=counts, colData = metadata, design= ~dex)
+```
+
+
+The main function in the DESeq package to run analysis is called `DESeq()`. 
+
+```{r}
+dds <- DESeq(dds)
+```
+
+get the results out of this DESeq object with the function `results()`
+
+
+```{r}
+res <- results(dds)
+head(res)
+```
+
+## Volcano Plot 
+
+This is plot of log2FC vs adjusted p-value
+
+
+```{r}
+plot(res$log2FoldChange, -log(res$padj))
+
+abline(v=c(-2,2), col="red")
+abline(h=-log(0.05),col="red")
+```
+## A nicer ggplot volcano plot
+
+```{r}
+library(ggplot2)
+
+mycols <- rep("gray", nrow(res))
+mycols[abs(res$log2FoldChange)>2] <- "blue"
+mycols[res$padj>=0.05] <- "gray"
+
+ggplot(res)+ aes(log2FoldChange, -log(padj))+ geom_point(col=mycols)
+```
+
+
+
+## Save our results
+
+```{r}
+write.csv(res,file="myresults.csv")
+```
+
+```{r}
+library(pathview)
+library(gage)
+library(gageData)
+
+data(kegg.sets.hs)
+
+# Examine the first 2 pathways in this kegg set for humans
+head(kegg.sets.hs, 2)
+```
+```{r}
+foldchanges = res$log2FoldChange
+names(foldchanges) = res$entrez
+head(foldchanges)
+```
+
+```{r}
+# Get the results
+keggres = gage(foldchanges, gsets=kegg.sets.hs)
+```
+
+```{r}
+attributes(keggres)
+```
+
+```{r}
+# Look at the first three down (less) pathways
+head(keggres$less, 3)
+```
+```{r}
+pathview(gene.data=foldchanges, pathway.id="hsa05310")
+```
+```{r}
+# A different PDF based output of the same data
+pathview(gene.data=foldchanges, pathway.id="hsa05310", kegg.native=FALSE)
+```
+
