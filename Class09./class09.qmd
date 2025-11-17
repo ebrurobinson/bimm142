@@ -1,0 +1,252 @@
+---
+title: "Class09 Structural Bioinformatics pt1"
+author: "Ebru Robinson"
+format: pdf
+toc: true
+---
+
+## The PDB database
+
+The main repository for biomolecular structure data is the Protein Data bank (PDB): https://www.rcsb.org
+
+Let's have a quick look at the composition of this database:
+
+```{r}
+data <- read.csv("./Data Export Summary.csv")
+data
+```
+
+> Q1: What percentage of structures in the PDB are solved by X-Ray and Electron Microscopy.
+
+This is annoying let's use a different import function from the **readr** package.
+
+Percent X-ray
+
+```{r}
+library(readr)
+
+data <- read_csv("Data Export Summary.csv")
+data
+```
+
+```{r}
+n.total <- sum(data$Total)
+n.xray <- sum(data$`X-ray`)
+n.em <- sum(data$EM)
+round(n.xray/n.total*100,2)
+round(n.em/n.total*100,2)
+```
+
+> Q2: What proportion of structures in the PDB are protein only?
+
+```{r}
+n.protein_only <- sum(data$`Protein only`)
+round(n.protein_only / n.total * 100, 2)
+```
+
+> Q3. Make a bar plot overview of Molecular type composition using ggplot.
+
+```{r}
+
+```
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+
+data <- read_csv("Data Export Summary.csv", show_col_types = FALSE)
+
+# Make the space-in-name easier to use
+data <- data |> rename(Molecular_Type = `Molecular Type`)
+
+
+```
+
+```{r}
+method_df <- data |>
+  summarise(`X-ray` = sum(`X-ray`, na.rm = TRUE),
+            EM      = sum(EM,      na.rm = TRUE),
+            NMR     = sum(NMR,     na.rm = TRUE),
+            Other   = sum(Other,   na.rm = TRUE)) |>
+  pivot_longer(everything(), names_to = "Method", values_to = "Count")
+
+ggplot(method_df, aes(Method, Count, fill = Method)) +
+  geom_col() +
+  labs(title = "PDB Structures by Determination Method (Overall)",
+       x = NULL, y = "Number of Structures") +
+  theme_minimal()
+```
+
+```{r}
+data_long <- data |>
+  select(Molecular_Type, `X-ray`, EM, NMR, Other) |>
+  pivot_longer(cols = c(`X-ray`, EM, NMR, Other),
+               names_to = "Method", values_to = "Count")
+
+ggplot(data_long, aes(Molecular_Type, Count, fill = Method)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  labs(title = "PDB Structures by Molecular Type and Method (Counts)",
+       x = "Molecular Type", y = "Number of Structures") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(data_long, aes(Molecular_Type, Count, fill = Method)) +
+  geom_col(position = "fill") +
+  scale_y_continuous(labels = percent) +
+  coord_flip() +
+  labs(title = "PDB Structures by Molecular Type and Method (Within-Type %)",
+       x = "Molecular Type", y = "Proportion") +
+  theme_minimal()
+```
+
+## Visualizing Structure Data
+
+The Mol\* viewer is embeded in many bioinformatics websites. The homepage is https://molstar.org/
+
+I can insert any figure or image file using markdown format
+
+![The HIV-Pr dimer with bound inhibitor](1HSG.png)
+
+## Bio3D package for structural bioinformatics
+
+We can use the bio3d package to read and analyze biomolecular data in R:
+
+```{r}
+library(bio3d)
+hiv <- read.pdb ("1hsg")
+hiv
+```
+
+```{r}
+head(hiv$atom)
+```
+
+Let's get the sequence
+
+```{r}
+pdbseq(hiv)
+```
+
+Let's trim chain to A and get just it's sequence
+
+```{r}
+chainA <- trim.pdb(hiv,chain="A")
+chainA.seq <- pdbseq(chainA)
+```
+
+Let's blast
+
+```{r blast_hiv,cache=TRUE}
+blast <- blast.pdb(chainA.seq)
+```
+
+```{r}
+head(blast$hit.tbl)
+```
+
+Plot a quick overview of blast results
+
+```{r}
+hits <- plot(blast)
+```
+
+accession number of the top hits
+
+```{r}
+hits$pdb.id
+```
+
+> Q4: Water molecules normally have 3 atoms. Why do we see just one atom per water molecule in this structure?
+
+We see only one atom per water molecule in PDB structures because only the oxygen position is experimentally resolved; hydrogens are invisible at most structural resolutions and are therefore omitted.
+
+> Q5: There is a critical “conserved” water molecule in the binding site. Can you identify this water molecule? What residue number does this water molecule have?
+
+## Prediction of functional motions
+
+We can run a Normal Mode Analysis (NMA) to predict large scale motions/flexibility/dynamics of any biomolecule that we can read into R.
+
+Let's look ADK
+
+```{r}
+adk <- read.pdb("1ake")
+adk_A <- trim.pdb(adk,chain="A")
+adk_A
+```
+
+```{r}
+m <- nma(adk_A)
+plot(m)
+```
+
+Let's write out a "trajectory" of predicted motion.
+
+```{r}
+mktrj(m, file="adk_nma.pdb")
+```
+
+##Play with 3D viewing in R
+
+We can use the new**bio3dview** package, which is not yet on CRAN, to render interactive 3D views in R and HTML quarto reports.
+
+To instal from GitHub we can use the **pak** package.
+
+```{r}
+library(bio3dview)
+view.pdb(adk)
+```
+
+
+## Comperative structure analysis
+
+Starting with a sequence or structure ID (accession number) Let's run a complete analysis pipeline.
+
+```{r}
+library(bio3d)
+id <- "1ake_A"
+aa <- get.seq(id)
+aa
+```
+
+```{r, cash=TRUE}
+blast <- blast.pdb(aa)
+hits <- plot(blast)
+```
+
+```{r}
+hits$pdb.id
+```
+
+Download all these "hits" that are similar to our starting id seq
+
+```{r}
+# Download releated PDB files
+files <- get.pdb(hits$pdb.id, path="pdbs", split=TRUE, gzip=TRUE)
+```
+```{r}
+# Align releated PDBs
+pdbs <- pdbaln(files, fit = TRUE, exefile="msa")
+```
+
+```{r}
+pc.xray <- pca(pdbs)
+plot(pc.xray)
+```
+```{r}
+plot(pc.xray,1:2)
+```
+
+```{r}
+mktrj(pc.xray, file="pca_results.pdb")
+```
+
+```{r}
+library(bio3dview)
+view.pca(pc.xray)
+```
+
